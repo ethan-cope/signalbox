@@ -6,7 +6,6 @@
 #include <LittleFS.h>
 #include <CertStoreBearSSL.h>
 
-
 //values that are constant per box
 #define BUTTON_PIN 4
 const char* mqtt_server = "SERVER_ID";
@@ -174,9 +173,9 @@ void loop() {
   }
   client->loop();
 
-  unsigned long now = millis();
-  if (now - lastMsg > minterval) {
-    lastMsg = now;
+  unsigned long rn = millis();
+  if (rn - lastMsg > minterval) {
+    lastMsg = rn;
     ++value;
 
     butval = digitalRead(BUTTON_PIN);
