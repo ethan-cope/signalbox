@@ -1,4 +1,3 @@
-
 #include <FastLED.h>
 #include <time.h>
 
@@ -16,7 +15,7 @@ CRGB leds[NUM_LEDS];
 //need a 1d array for default value and a 2d array for diffs.
 //should be unsigned char, so rolls over after 255. 
 
-uint8_t current_color_hue = 83;
+uint8_t current_color_hue = 129;
 uint8_t default_saturation = 255;
 uint8_t default_brightness = MAX_BRIGHTNESS;
 int animNum = 0;
@@ -79,7 +78,7 @@ int animate(int selection){
   hnum = 0; snum = 0; vnum = 0;
   FastLED.show();
   if(selection == 0){
-    //no animation. constantly set to nothing.
+    //no animation. stay what it is already.
     return 0;
   }
   else if (selection == 1){
@@ -139,8 +138,6 @@ int animate(int selection){
     {
       return 1;
     }
-    //status();
-
     //this one had a part where I parsed backwards for some reason.
   }
     else if (selection == 6){
@@ -170,14 +167,43 @@ int animate(int selection){
       leds[i] = CHSV(current_color_hue + ledValDiffs[i][0], default_saturation, default_brightness+ledValDiffs[i][2]);
     }
     
-    //status();
-
     if (done){
       return 1; //when complete
     }
-
   }
   return 0;
+}
+
+//interrupt stuff
+
+const char numColors = 4;
+uint8_t colorHSVVals[numColors] = {235, 83, 129, 0};
+volatile int colorIndex = 0;
+const volatile int myColorIndex = 4;
+
+volatile unsigned long lastPressTS = 0;
+volatile bool btnISRFlag = false;
+ICACHE_RAM_ATTR void pin_ISR(){
+  // can't use millis()
+
+  if (millis() - lastPressTS > 10){ 
+    // 10 is debounce time in mS: if our difference is > debounce, it's legit. 
+    lastPressTS = millis();
+    btnISRFlag = true;
+    
+    //changing color here.
+    ++colorIndex;
+    if(colorIndex == myColorIndex){
+      ++colorIndex;
+    }
+    if(colorIndex >= numColors){
+      colorIndex = 0;
+    }
+    current_color_hue = colorHSVVals[colorIndex];
+    
+    resetLED(true);
+    //toggle = !toggle;
+  }
 }
 
 void setup() { 
@@ -192,54 +218,51 @@ void setup() {
   }
 
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), pin_ISR, RISING);
   resetLED(false);
 }
 
-unsigned long lastMsg = 0;
+
+unsigned long lastLoop = 0;
+unsigned long lastSentMsg = 0;
+volatile bool msgSent = false;
 unsigned long minterval = 250;
-int butval = 0;
-unsigned long onTime = 0; //in milliseconds
-unsigned long onInterval = 10 * 1000; // provide left number in seconds for ease of use.
+unsigned long sendInterval = 4 * 1000;
+unsigned long longInterval = 10 * 1000; // provide left number in seconds for ease of use.
 
 void loop() { 
   unsigned long rn = millis();
-  if (rn - lastMsg > minterval){
-    butval = digitalRead(BUTTON_PIN);
-
-    if(butval == 0){
-      //sets to fade in.
-      animNum = 1;
-      onTime = millis();
-      Serial.print("\n\nPRESSED!!!!!\n\n");
-    }
-    
-    if(animate(animNum) == 1){
-      //this only returns 1 if we're done fading out. 
-      resetLED(false);
-      animNum = 0;
-    }
-    
-    else if(rn - onTime > onInterval && animNum == 1)
-    {
-      //start fading out. 
-      animNum = 6;
-    }
-    
-    else if(animNum != 0){
-      status();
-    }
-    
-    //status();
-    lastMsg = rn;
-
+  if (rn - lastLoop > minterval){
+    lastLoop = rn;
     /*
-    if(animate(animNum) == 1){
-      //now all that's left is finding a way to program in lengths of time before fadeout.
-      //status();
-      animNum = 0;
+    if(btnISRFlag){
+      lastMsg = rn;
+      
+    }*/
+    
+    if(btnISRFlag && rn - lastPressTS >= sendInterval){
+      //do a bunch of stuff (send message, set long TS, etc)
+      msgSent = true;
+      lastSentMsg = millis();
+      btnISRFlag = false;
+      
+      //flash message confirmation
       resetLED(false);
-    }
-    */
-  }
+      delay(250);
+      resetLED(true);
 
+    }
+
+    else if (rn - lastSentMsg > longInterval && msgSent){
+      // this is too jumpy. triggers every single time when out of interval.
+      // sometimes cuts off interrupt and forces reset to false.
+      //turning off after long interval
+      Serial.print(lastSentMsg);
+      Serial.print(" : ");
+      Serial.print(rn);
+      Serial.print("\n");
+      resetLED(false);
+      msgSent = false;
+    }
+  }
 }
