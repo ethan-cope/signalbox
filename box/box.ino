@@ -15,36 +15,27 @@
 #define MAX_BRIGHTNESS 100
 #define CTREM_VAL 7
 #define VTREM_VAL 20
-
 const char* mqtt_server = "SERVER_ID";
 
-//colors is an array of strings
-const char numColors = 4;
-//[number of strings][length of strings]
-char colors[numColors][4] = {"ltr", "grn", "blu", "dkr"};
-uint8_t colorHSVVals[numColors] = {322, 83, 129, 0};
-int colorIndex = 0;
-
-//TODO paralell array of neopixel colors goes here
-
+// [LED STATUS VARS] 
 CRGB leds[NUM_LEDS];
+const char numColors = 4;
+char colors[numColors][4] = {"ltr", "grn", "blu", "dkr"};
+uint8_t colorHSVVals[numColors] = {235, 83, 129, 0};
+const volatile int myColorIndex = 2;
 
-//set value of LEDs will always be the same
-//need a 1d array for default value and a 2d array for diffs.
-//should be unsigned char, so rolls over after 255. 
-
-uint8_t current_color_hue = 83;
+// [LED STATE VARS]
+volatile int colorIndex = 0;
+uint8_t current_color_hue = 129;
 uint8_t default_saturation = 255;
 uint8_t default_brightness = MAX_BRIGHTNESS;
-int animNum = 0;
 int16_t ledValDiffs[NUM_LEDS][3];
-
-//[NON-CONSTANTS]
-const char* ssid = "WIFI_SSID";
-const char* password = "WIFI_PW";
-const int myColorIndex = 1;
+int animNum = 0;
 
 //[WIFI STUFF]
+
+const char* ssid = "WIFI_SSID";
+const char* password = "WIFI_PW";
 
 // A single, global CertStore which can be used by all connections.
 // Needs to stay live the entire time any of the WiFiClientBearSSLs
@@ -53,7 +44,6 @@ BearSSL::CertStore certStore;
 
 WiFiClientSecure espClient;
 PubSubClient * client;
-unsigned long lastMsg = 0;
 #define MSG_BUFFER_SIZE (500)
 char msg[MSG_BUFFER_SIZE];
 char connmsg[MSG_BUFFER_SIZE];
@@ -82,7 +72,6 @@ void setup_wifi() {
   Serial.println(WiFi.localIP());
 }
 
-
 void setDateTime() {
   // You can use your own timezone, but the exact time is not used at all.
   // Only the date is needed for validating the certificates.
@@ -103,55 +92,8 @@ void setDateTime() {
 }
 
 
-void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
-  for (int i = 0; i < length; i++) {
-    Serial.print((char)payload[i]);
-  }
-  Serial.println();
 
-  // Switch on the LED if the first character is present
-  if ((char)payload[0] != NULL) {
-    digitalWrite(LED_BUILTIN, LOW); // Turn the LED on (Note that LOW is the voltage level
-    // but actually the LED is on; this is because
-    // it is active low on the ESP-01)
-    delay(500);
-    digitalWrite(LED_BUILTIN, HIGH); // Turn the LED off by making the voltage HIGH
-  } else {
-    digitalWrite(LED_BUILTIN, HIGH); // Turn the LED off by making the voltage HIGH
-  }
-  //this is where we turn on the color for a little bit.
-}
-
-
-void reconnect() {
-  // Loop until we’re reconnected
-  snprintf (connmsg, MSG_BUFFER_SIZE, "%s device online!", colors[myColorIndex]);
-  while (!client->connected()) {
-    Serial.print("Attempting MQTT connection…");
-    String clientId = "ESP8266Client - MyClient";
-    // Attempt to connect
-    // Insert your password
-    // change this for when other people connect their devices!
-    if (client->connect(clientId.c_str(), "BOX_NAME", "SERVER_PW")) {
-      Serial.println("connected");
-      // Once connected, publish an announcement…
-      client->publish("general", connmsg);
-      // … and resubscribe
-      client->subscribe(colors[myColorIndex]);
-    } else {
-      Serial.print("failed, rc = ");
-      Serial.print(client->state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
-  }
-}
-
-//[LED STUFF]
+// [ANIMATION FUNCTIONS]
 
 void status(){
   //Serial.print(NUM_LEDS);
@@ -193,7 +135,7 @@ void resetLED(bool lightsOn){
   FastLED.show();
 }
 
-// here are the animation-specific global variables 
+// [ANIMATE BLOCK] 
 
 int8_t an1CtremSigns[NUM_LEDS];
 int8_t an1VtremSign = 1;
@@ -209,7 +151,7 @@ int animate(int selection){
   hnum = 0; snum = 0; vnum = 0;
   FastLED.show();
   if(selection == 0){
-    //no animation. constantly set to nothing.
+    //no animation. stay what it is already.
     return 0;
   }
   else if (selection == 1){
@@ -240,40 +182,7 @@ int animate(int selection){
     }
     //status();
   }
-  else if (selection == 5){
-    //this fade in is hella broken. ignore for now, since animation 1 fades in.
-    //maybe it's broken cause I never show the changes :/
-    int actval = 0;
-    int expval = 0;
-    int increment = default_brightness / NUM_LEDS; 
-    bool done = true;
-    //assumes off. 
-    //fade in. use log2 in a row.
-    //an5LedNum
-    for(int i = NUM_LEDS - 1; i > 0; i++){
-      if(i >= an5LedNum){
-        if (ledValDiffs[i][2] == -1*default_brightness){
-          ledValDiffs[i][2] = -1*default_brightness +2;
-          done = false;
-        }
-        else if(-1*ledValDiffs[i][2] < default_brightness){
-          ledValDiffs[i][2] += increment; 
-          done = false;
-        }
-        else if(ledValDiffs[i][2] > 0){
-          ledValDiffs[i][2] = 0;
-        }
-      }
-    }
-    if(done)
-    {
-      return 1;
-    }
-    //status();
-
-    //this one had a part where I parsed backwards to stop rollover.
-  }
-    else if (selection == 6){
+  else if (selection == 6){
     //fade out. random.
     //if the pin's value isn't off, fade that pin out incrementally and randomly.
     //once faded out / pin invalid, you need to pick another random.
@@ -300,26 +209,79 @@ int animate(int selection){
       leds[i] = CHSV(current_color_hue + ledValDiffs[i][0], default_saturation, default_brightness+ledValDiffs[i][2]);
     }
     
-    //status();
-
     if (done){
       return 1; //when complete
     }
-
   }
   return 0;
 }
+
+// [INTERRUPT BLOCK]
+
+volatile unsigned long lastPressTS = 0;
+volatile bool btnISRFlag = false;
+ICACHE_RAM_ATTR void pin_ISR(){
+  // can't use millis()
+
+  if (millis() - lastPressTS > 10){ 
+    // 10 is debounce time in mS: if our difference is > debounce, it's legit. 
+    lastPressTS = millis();
+    btnISRFlag = true;
+    
+    //changing color here.
+    ++colorIndex;
+    if(colorIndex == myColorIndex){
+      ++colorIndex;
+    }
+    if(colorIndex >= numColors){
+      colorIndex = 0;
+    }
+    current_color_hue = colorHSVVals[colorIndex];
+    
+    resetLED(true);
+    //toggle = !toggle;
+  }
+}
+
+// [RECONNECTION HELPER FUNCTION]
+
+void reconnect() {
+  // Loop until we’re reconnected
+  snprintf (connmsg, MSG_BUFFER_SIZE, "%s device online!", colors[myColorIndex]);
+  while (!client->connected()) {
+    Serial.print("Attempting MQTT connection…");
+    String clientId = "ESP8266Client - MyClient";
+    // Attempt to connect
+    // Insert your password
+    // change this for when other people connect their devices!
+    if (client->connect(clientId.c_str(), "BOX_NAME", "SERVER_PW")) {
+      Serial.println("connected");
+      // Once connected, publish an announcement…
+      client->publish("general", connmsg);
+      // … and resubscribe
+      client->subscribe(colors[myColorIndex]);
+    } else {
+      Serial.print("failed, rc = ");
+      Serial.print(client->state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+// [PROGRAM RUN]
 
 void setup() {
   delay(500);
   // When opening the Serial Monitor, select 9600 Baud
   Serial.begin(9600);
   delay(500);
+
+  //wifi setup
   LittleFS.begin();
   setup_wifi();
   setDateTime();
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode(LED_BUILTIN, OUTPUT); // Initialize the LED_BUILTIN pin as an output
 
   //lighting setup
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
@@ -327,11 +289,13 @@ void setup() {
     an1CtremSigns[u]=1;
   }
   resetLED(false);
+  animNum = 0;
 
-  //certs stuff
+  // interrupt setup
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), pin_ISR, RISING);
 
-  // you can use the insecure mode, when you want to avoid the certificates
-  // espclient->setInsecure();
+  //MQTT certificate setup
   int numCerts = certStore.initCertStore(LittleFS, PSTR("/certs.idx"), PSTR("/certs.ar"));
   Serial.printf("Number of CA certs read: %d\n", numCerts);
   if (numCerts == 0) {
@@ -347,72 +311,89 @@ void setup() {
   client->setCallback(callback);
 }
 
-bool clicked = false;
-int butval = 0;
-int minterval = 250;
-int pressTimeout = 0;
-unsigned long onTime = 0; //in milliseconds
-unsigned long onInterval = 10 * 1000; // provide left number in seconds for ease of use.
-
-void loop() {
-  if (!client->connected()) {
-    reconnect();
-  }
-  client->loop();
-
-  unsigned long rn = millis();
-  if (rn - lastMsg > minterval) {
-    lastMsg = rn;
-    ++value;
-
-    butval = digitalRead(BUTTON_PIN);
-
-    //when button is let go of after click. this latches to an actual click.
-    if(butval == 1 && clicked){
-      clicked = false;
-      //increment colorindex. 
-      ++colorIndex;
-
-      // when button pressed, better polling  resolution.
-      minterval = 100;
-      pressTimeout = 30;
-
-      // if it's your color, increment again
-      if(colorIndex == myColorIndex)
-        ++colorIndex;
-
-      // if it's past end, go to 0
-      if(colorIndex >= numColors)
-        colorIndex = 0;
-
-      
-	    current_color_hue = colorHSVVals[colorIndex];
-      resetLED(true);
-      Serial.println(colors[colorIndex]);
-    }
-    else if(butval == 0){
-      clicked = true;
-
-    }
-
-    //pressTimeout will just hang at -2 
-    if (pressTimeout > -2){
-      --pressTimeout;
-    }
-
-    if (pressTimeout == 0){
-      //snprintf (info, MSG_BUFFER_SIZE, "Publishing %s to %s", msg, colors[colorIndex]);
-      //Serial.println(info);
-      snprintf (msg, MSG_BUFFER_SIZE, "%s->%s", colors[myColorIndex], colors[colorIndex]);
-      client->publish(colors[colorIndex], msg);
-      minterval = 500;
-    }
-
+// [HOW TO SEND A MESSAGE] 
+    //snprintf (msg, MSG_BUFFER_SIZE, "%s->%s", colors[myColorIndex], colors[colorIndex]);
+    //client->publish(colors[colorIndex], msg);
     /*
     snprintf (msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
     Serial.print("Publish message: ");
     Serial.println(msg);
     client->publish("testTopic", msg);
     */
+
+unsigned long lastLoop = 0;             // timestamp for last time we looped
+unsigned long lastMsg = 0;              // timestamp for last message
+volatile bool msgOut = false;           // message sent flag
+unsigned long minterval = 250;          // polling interval
+unsigned long sendInterval = 4 * 1000;  // How long after select before send
+unsigned long longInterval = 10 * 1000; // How long the Lamp is on
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+
+  // Switch on the LED if the first character is present
+  if ((char)payload[0] != NULL) {
+    digitalWrite(LED_BUILTIN, LOW); // Turn the LED on (Note that LOW is the voltage level
+    // but actually the LED is on; this is because
+    // it is active low on the ESP-01)
+    delay(500);
+    digitalWrite(LED_BUILTIN, HIGH); // Turn the LED off by making the voltage HIGH
+  } else {
+    digitalWrite(LED_BUILTIN, HIGH); // Turn the LED off by making the voltage HIGH
+  }
+
+  msgOut = true;
+  lastMsg = millis();
+
+  //we need to get this junk and find out what color to make the leds
+  colorIndex = (char)payload[4];
+
+  animNum = 1;
+  resetLED(true);
+}
+
+void loop() {
+  if (!client->connected()) {
+    reconnect();
+  }
+  client->loop();
+  unsigned long rn = millis();
+  if (rn - lastLoop > minterval){
+    lastLoop = rn;
+    
+    if(btnISRFlag && rn - lastPressTS >= sendInterval){
+      //send message, set long timestamp, etc
+      msgOut = true;
+      lastMsg = millis();
+      btnISRFlag = false;
+
+      Serial.print(colors[myColorIndex]);
+      snprintf (msg, MSG_BUFFER_SIZE, "%s(%d)->%s", colors[myColorIndex], myColorIndex, colors[colorIndex]);
+      client->publish(colors[colorIndex], msg);
+      
+      //flash to indicate message has been sent
+      animNum = 1;
+      resetLED(false);
+      delay(250);
+      resetLED(true);
+    }
+
+    else if (rn - lastMsg > longInterval && msgOut){
+      //turning off after long interval, whether we sent or recvd
+      Serial.print(lastMsg);
+      Serial.print(" : ");
+      Serial.print(rn);
+      Serial.print("\n");
+      animNum = 0;
+      resetLED(false);
+      msgOut = false;
+    }
+    animate(animNum);
   }
 }
