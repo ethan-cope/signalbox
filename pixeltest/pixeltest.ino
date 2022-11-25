@@ -2,25 +2,29 @@
 #include <time.h>
 
 #define BUTTON_PIN 4
-
 #define NUM_LEDS 7
 #define DATA_PIN 5
 #define MAX_BRIGHTNESS 100
 #define CTREM_VAL 7
 #define VTREM_VAL 20
 
+// LED Status Variables
 CRGB leds[NUM_LEDS];
+int16_t ledValDiffs[NUM_LEDS][3];
+const char numColors = 4;
+uint8_t colorHSVVals[numColors] = {235, 83, 129, 0};
+const volatile int myColorIndex = 4;
 
-//set value of LEDs will always be the same
-//need a 1d array for default value and a 2d array for diffs.
-//should be unsigned char, so rolls over after 255. 
 
+// Current State Variables
 uint8_t current_color_hue = 129;
 uint8_t default_saturation = 255;
 uint8_t default_brightness = MAX_BRIGHTNESS;
+
+volatile int colorIndex = 0;
 int animNum = 0;
 
-int16_t ledValDiffs[NUM_LEDS][3];
+
 
 void status(){
   //Serial.print(NUM_LEDS);
@@ -175,14 +179,8 @@ int animate(int selection){
 }
 
 //interrupt stuff
-
-const char numColors = 4;
-uint8_t colorHSVVals[numColors] = {235, 83, 129, 0};
-volatile int colorIndex = 0;
-const volatile int myColorIndex = 4;
-
-volatile unsigned long lastPressTS = 0;
-volatile bool btnISRFlag = false;
+volatile unsigned long lastPressTS = 0; //timestamp of last button press
+volatile bool btnISRFlag = false; //flag that stays on until cleared by ISR. 
 ICACHE_RAM_ATTR void pin_ISR(){
   // can't use millis()
 
@@ -220,19 +218,20 @@ void setup() {
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), pin_ISR, RISING);
   resetLED(false);
+  animNum = 0;
 }
 
 
 unsigned long lastLoop = 0;
 unsigned long lastSentMsg = 0;
 volatile bool msgSent = false;
-unsigned long minterval = 250;
-unsigned long sendInterval = 4 * 1000;
-unsigned long longInterval = 10 * 1000; // provide left number in seconds for ease of use.
+unsigned long pollInterval = 250;
+unsigned long sendInterval = 4 * 1000;  // how long before we send a message after recipient selection
+unsigned long longInterval = 10 * 1000; // how long in seconds the lantern stays on
 
 void loop() { 
   unsigned long rn = millis();
-  if (rn - lastLoop > minterval){
+  if (rn - lastLoop > pollInterval){
     lastLoop = rn;
     /*
     if(btnISRFlag){
@@ -247,6 +246,7 @@ void loop() {
       btnISRFlag = false;
       
       //flash message confirmation
+      animNum = 1;
       resetLED(false);
       delay(250);
       resetLED(true);
@@ -261,8 +261,10 @@ void loop() {
       Serial.print(" : ");
       Serial.print(rn);
       Serial.print("\n");
+      animNum = 0;
       resetLED(false);
       msgSent = false;
     }
+    animate(animNum);
   }
 }
