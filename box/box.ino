@@ -97,23 +97,14 @@ void setDateTime() {
 
 void status(){
   //Serial.print(NUM_LEDS);
-  Serial.print("[animNum: ");
-  Serial.print(animNum);
-  Serial.print("]\n");
-  Serial.print("Defaults:\n");
-  Serial.print(current_color_hue); Serial.print(" | ");
-  Serial.print(default_saturation); Serial.print(" | ");
-  Serial.print(default_brightness); Serial.print("\n\n");
+  sprintf(msg, "### STATUS ###\n[animNum: %d ]\nDefaults:\n%d | %d | %d\n\n", animNum, current_color_hue, default_saturation, default_brightness);
+  Serial.print(msg);
 
   for(int i = 0; i< NUM_LEDS; i++){
-    Serial.print("(");
-    Serial.print(ledValDiffs[i][0]);
-    Serial.print(",");
-    Serial.print(ledValDiffs[i][1]);
-    Serial.print(",");
-    Serial.print(ledValDiffs[i][2]);
-    Serial.print(")\n");
+    sprintf(msg, "( %d, %d, %d )\n", ledValDiffs[i][0], ledValDiffs[i][1], ledValDiffs[i][2]);
+    Serial.print(msg);
   }
+  Serial.println();
 }
 
 void resetLED(bool lightsOn){
@@ -329,13 +320,12 @@ unsigned long sendInterval = 4 * 1000;  // How long after select before send
 unsigned long longInterval = 10 * 1000; // How long the Lamp is on
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  Serial.print("Message arrived [");
-  Serial.print(topic);
-  Serial.print("] ");
+  sprintf(msg, "[RECV] Message arrived [%s]: (", topic);
+  Serial.print(msg);
   for (int i = 0; i < length; i++) {
     Serial.print((char)payload[i]);
   }
-  Serial.println();
+  Serial.print(")\n");
 
   // Switch on the LED if the first character is present
   if ((char)payload[0] != NULL) {
@@ -348,14 +338,26 @@ void callback(char* topic, byte* payload, unsigned int length) {
     digitalWrite(LED_BUILTIN, HIGH); // Turn the LED off by making the voltage HIGH
   }
 
-  msgOut = true;
-  lastMsg = millis();
-
   //we need to get this junk and find out what color to make the leds
-  colorIndex = (char)payload[4];
+  //sketchy conversion from ascii here
+  
+  if (((char)payload[4]-48) >=0 && ((char)payload[4]-48) < numColors){
+    msgOut = true;
+    lastMsg = millis();
+    
+    sprintf(msg, "[RECV] Setting Color to %d (%s) \n", (char)payload[4]-48, colors[colorIndex]);
+    Serial.print(msg);
+    colorIndex = (char)payload[4]-48;
+    current_color_hue = colorHSVVals[colorIndex];
+    
+    animNum = 1;
+    resetLED(true);
+  }
+  else{
+    sprintf(msg, "[RECV] Invalid Color Index %d\n", (char)payload[4]-48);
+    Serial.print(msg); 
+  }
 
-  animNum = 1;
-  resetLED(true);
 }
 
 void loop() {
@@ -372,10 +374,12 @@ void loop() {
       msgOut = true;
       lastMsg = millis();
       btnISRFlag = false;
-
-      Serial.print(colors[myColorIndex]);
+  
       snprintf (msg, MSG_BUFFER_SIZE, "%s(%d)->%s", colors[myColorIndex], myColorIndex, colors[colorIndex]);
       client->publish(colors[colorIndex], msg);
+      
+      sprintf(msg, "[SEND] Sending Message [%s to %s]\n", colors[myColorIndex], colors[colorIndex]);
+      Serial.print(msg);
       
       //flash to indicate message has been sent
       animNum = 1;
@@ -386,10 +390,8 @@ void loop() {
 
     else if (rn - lastMsg > longInterval && msgOut){
       //turning off after long interval, whether we sent or recvd
-      Serial.print(lastMsg);
-      Serial.print(" : ");
-      Serial.print(rn);
-      Serial.print("\n");
+      sprintf (msg, "[TOFF] Turning off after %d seconds. (%d : %d) \n", (rn-lastMsg)/1000, lastMsg/1000, rn/1000);
+      Serial.print(msg);
       animNum = 0;
       resetLED(false);
       msgOut = false;
