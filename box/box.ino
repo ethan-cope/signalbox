@@ -221,9 +221,14 @@ ICACHE_RAM_ATTR void pin_ISR(){
     
     //changing color here.
     ++colorIndex;
+    //beginning overflow
+    if(colorIndex >= numColors){
+      colorIndex = 0;
+    }
     if(colorIndex == myColorIndex){
       ++colorIndex;
     }
+    //ending overflow
     if(colorIndex >= numColors){
       colorIndex = 0;
     }
@@ -241,11 +246,26 @@ void reconnect() {
   snprintf (connmsg, MSG_BUFFER_SIZE, "%s device online!", colors[myColorIndex]);
   while (!client->connected()) {
     Serial.print("Attempting MQTT connection…");
-    String clientId = "ESP8266Client - MyClient";
     // Attempt to connect
     // Insert your password
     // change this for when other people connect their devices!
-    if (client->connect(clientId.c_str(), "BOX_NAME", "SERVER_PW")) {
+
+    char uName[] = "";
+    sprintf(uName, "%sbox", colors[myColorIndex]);
+    // Working!
+    
+    // this should be colors[myColorIndex]box
+    String clientId = "ESP8266Client - ";
+    clientId += colors[myColorIndex];
+    clientId += "box";
+
+    //Serial.println(clientId);
+    
+    // bluebox, dkrbox, greenbox, ltredbox
+    Serial.println(uName);
+    Serial.println(clientId);
+    
+    if (client->connect(clientId.c_str(), uName , "")) {
       Serial.println("connected");
       // Once connected, publish an announcement…
       client->publish("general", connmsg);
@@ -317,7 +337,8 @@ unsigned long lastMsg = 0;              // timestamp for last message
 volatile bool msgOut = false;           // message sent flag
 unsigned long minterval = 250;          // polling interval
 unsigned long sendInterval = 4 * 1000;  // How long after select before send
-unsigned long longInterval = 10 * 1000; // How long the Lamp is on
+//unsigned long longInterval = 2 * 60 * 60 * 1000; // How long the Lamp is on
+unsigned long longInterval = 15 * 1000; // How long the Lamp is on
 
 void callback(char* topic, byte* payload, unsigned int length) {
   sprintf(msg, "[RECV] Message arrived [%s]: (", topic);
@@ -345,13 +366,13 @@ void callback(char* topic, byte* payload, unsigned int length) {
     msgOut = true;
     lastMsg = millis();
     
-    sprintf(msg, "[RECV] Setting Color to %d (%s) \n", (char)payload[4]-48, colors[colorIndex]);
     Serial.print(msg);
     colorIndex = (char)payload[4]-48;
+    sprintf(msg, "[RECV] Setting Color to %d (%s) \n", (char)payload[4]-48, colors[colorIndex]);
     current_color_hue = colorHSVVals[colorIndex];
     
     animNum = 1;
-    resetLED(true);
+    //resetLED(true);
   }
   else{
     sprintf(msg, "[RECV] Invalid Color Index %d\n", (char)payload[4]-48);
