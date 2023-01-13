@@ -15,6 +15,7 @@
 #define MAX_BRIGHTNESS 100
 #define CTREM_VAL 7
 #define VTREM_VAL 20
+
 const char* mqtt_server = "SERVER_ID";
 
 // [LED STATUS VARS] 
