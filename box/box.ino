@@ -22,7 +22,7 @@ CRGB leds[NUM_LEDS];
 const char numColors = 4;
 char colors[numColors][4] = {"ltr", "grn", "blu", "dkr"};
 uint8_t colorHSVVals[numColors] = {235, 83, 129, 0};
-const volatile int myColorIndex = 2;
+const volatile int myColorIndex = 0;
 
 // [LED STATE VARS]
 volatile int colorIndex = 0;
@@ -34,8 +34,8 @@ int animNum = 0;
 
 //[WIFI STUFF]
 
-const char* ssid = "WIFI_SSID";
-const char* password = "WIFI_PW";
+const char* ssid = ""; // PUT NETWORK NAME HERE
+const char* password = ""; // PUT NETWORK PW HERE
 
 // A single, global CertStore which can be used by all connections.
 // Needs to stay live the entire time any of the WiFiClientBearSSLs
@@ -265,7 +265,7 @@ void reconnect() {
     Serial.println(uName);
     Serial.println(clientId);
     
-    if (client->connect(clientId.c_str(), uName , "")) {
+    if (client->connect(clientId.c_str(), uName , "SERVER_PW")) {
       Serial.println("connected");
       // Once connected, publish an announcement…
       client->publish("general", connmsg);
@@ -337,8 +337,8 @@ unsigned long lastMsg = 0;              // timestamp for last message
 volatile bool msgOut = false;           // message sent flag
 unsigned long minterval = 250;          // polling interval
 unsigned long sendInterval = 4 * 1000;  // How long after select before send
-//unsigned long longInterval = 2 * 60 * 60 * 1000; // How long the Lamp is on
-unsigned long longInterval = 15 * 1000; // How long the Lamp is on
+unsigned long longInterval = 2 * 60 * 60 * 1000; // How long the Lamp is on
+//unsigned long longInterval = 15 * 1000; // How long the Lamp is on
 
 void callback(char* topic, byte* payload, unsigned int length) {
   sprintf(msg, "[RECV] Message arrived [%s]: (", topic);
