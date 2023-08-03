@@ -7,6 +7,7 @@
 #include <CertStoreBearSSL.h>
 #include <FastLED.h>
 #include <time.h>
+#include "info.h"
 
 //[CONSTANTS]
 #define BUTTON_PIN 4
@@ -16,14 +17,15 @@
 #define CTREM_VAL 7
 #define VTREM_VAL 20
 
-const char* mqtt_server = "SERVER_ID";
+// [DEBUG MODE]
+bool debugActive = true;
 
 // [LED STATUS VARS] 
 CRGB leds[NUM_LEDS];
 const char numColors = 4;
 char colors[numColors][4] = {"ltr", "grn", "blu", "dkr"};
 uint8_t colorHSVVals[numColors] = {235, 83, 129, 0};
-const volatile int myColorIndex = 0;
+const volatile int myColorIndex = 1;
 
 // [LED STATE VARS]
 volatile int colorIndex = 0;
@@ -35,8 +37,8 @@ int animNum = 0;
 
 //[WIFI STUFF]
 
-const char* ssid = ""; // PUT NETWORK NAME HERE
-const char* password = ""; // PUT NETWORK PW HERE
+const char* ssid = user_defined_ssid;         // PUT NETWORK NAME HERE
+const char* password = user_defined_wifipass; // PUT NETWORK PW HERE
 
 // A single, global CertStore which can be used by all connections.
 // Needs to stay live the entire time any of the WiFiClientBearSSLs
@@ -244,7 +246,7 @@ ICACHE_RAM_ATTR void pin_ISR(){
 
 void reconnect() {
   // Loop until we’re reconnected
-  snprintf (connmsg, MSG_BUFFER_SIZE, "%s device online!", colors[myColorIndex]);
+  snprintf (connmsg, MSG_BUFFER_SIZE, "[RCON] [%s] device online.", colors[myColorIndex]);
   while (!client->connected()) {
     Serial.print("Attempting MQTT connection…");
     // Attempt to connect
@@ -266,10 +268,10 @@ void reconnect() {
     Serial.println(uName);
     Serial.println(clientId);
     
-    if (client->connect(clientId.c_str(), uName , "SERVER_PW")) {
+    if (client->connect(clientId.c_str(), uName , pw)) {
       Serial.println("connected");
       // Once connected, publish an announcement…
-      client->publish("general", connmsg);
+      debugPrintMQTT(connmsg);
       // … and resubscribe
       client->subscribe(colors[myColorIndex]);
     } else {
@@ -279,6 +281,14 @@ void reconnect() {
       // Wait 5 seconds before retrying
       delay(5000);
     }
+  }
+}
+
+// [DEBUG MODE MQTT POSTING]
+
+void debugPrintMQTT(char* msg){
+  if (debugActive){
+    client->publish("debug", msg);
   }
 }
 
@@ -339,15 +349,19 @@ volatile bool msgOut = false;           // message sent flag
 unsigned long minterval = 250;          // polling interval
 unsigned long sendInterval = 4 * 1000;  // How long after select before send
 unsigned long longInterval = 2 * 60 * 60 * 1000; // How long the Lamp is on
-//unsigned long longInterval = 15 * 1000; // How long the Lamp is on
+//unsigned long longInterval = 15 * 1000; // DEBUG LAMP ON INTERVAL
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  sprintf(msg, "[RECV] Message arrived [%s]: (", topic);
-  Serial.print(msg);
+
+  // output message to serial
+
+  // we can't store this for now because I don't want to dive into string handling, i want to make something cool
+  Serial.print("[RECV] Message arrived:");
   for (int i = 0; i < length; i++) {
+    //payloadString[i] = (char)payload[i];
     Serial.print((char)payload[i]);
   }
-  Serial.print(")\n");
+  Serial.print("\n");
 
   // Switch on the LED if the first character is present
   if ((char)payload[0] != NULL) {
@@ -367,16 +381,18 @@ void callback(char* topic, byte* payload, unsigned int length) {
     msgOut = true;
     lastMsg = millis();
     
-    Serial.print(msg);
     colorIndex = (char)payload[4]-48;
-    sprintf(msg, "[RECV] Setting Color to %d (%s) \n", (char)payload[4]-48, colors[colorIndex]);
     current_color_hue = colorHSVVals[colorIndex];
     
     animNum = 1;
-    //resetLED(true);
+    //output message to serial...
+    sprintf(msg, "[RECV] [%s] Setting Color to %d (%s) \n", colors[myColorIndex], (char)payload[4]-48, colors[colorIndex]);
+    Serial.print(msg);
+    // and to debug
+    debugPrintMQTT(msg);
   }
   else{
-    sprintf(msg, "[RECV] Invalid Color Index %d\n", (char)payload[4]-48);
+    sprintf(msg, "[RECV] Invalid Color Index %d \n", (char)payload[4]-48);
     Serial.print(msg); 
   }
 
@@ -392,16 +408,24 @@ void loop() {
     lastLoop = rn;
     
     if(btnISRFlag && rn - lastPressTS >= sendInterval){
+      // if we get a button interrupt AND we've waited sendInterval seconds 
+      //(AKA message is ready to be sent)...
+      
       //send message, set long timestamp, etc
       msgOut = true;
       lastMsg = millis();
       btnISRFlag = false;
-  
+
+      // post message to the recipient box's client 
       snprintf (msg, MSG_BUFFER_SIZE, "%s(%d)->%s", colors[myColorIndex], myColorIndex, colors[colorIndex]);
       client->publish(colors[colorIndex], msg);
       
-      sprintf(msg, "[SEND] Sending Message [%s to %s]\n", colors[myColorIndex], colors[colorIndex]);
+      //debug output on serial monitor...
+      sprintf(msg, "[SEND] [%s] Sending Message (to %s)\n", colors[myColorIndex], colors[colorIndex]);
       Serial.print(msg);
+
+      //and to MQTT
+      debugPrintMQTT(msg);
       
       //flash to indicate message has been sent
       animNum = 1;
@@ -411,9 +435,10 @@ void loop() {
     }
 
     else if (rn - lastMsg > longInterval && msgOut){
-      //turning off after long interval, whether we sent or recvd
+      //turning off after long interval, whether we sent or received 
       sprintf (msg, "[TOFF] Turning off after %d seconds. (%d : %d) \n", (rn-lastMsg)/1000, lastMsg/1000, rn/1000);
       Serial.print(msg);
+      
       animNum = 0;
       resetLED(false);
       msgOut = false;
