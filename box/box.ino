@@ -7,7 +7,12 @@
 #include <CertStoreBearSSL.h>
 #include <FastLED.h>
 #include <time.h>
-#include "info.h"
+#include "info.h" // REMOVE THIS LINE, UNCOMMENT LINES BELOW AFTER ADDING YOUR INFO 
+
+// const char* mqtt_server = "YOUR_MQTT_SERVER_HERE";
+// const char* pw = "YOUR_MQTT_PASSWORD_HERE";
+// const char* user_defined_ssid = "YOUR_WIFI_NETWORK_HERE";
+// const char* user_defined_wifipass = "YOUR_WIFI_PASSWORD_HERE";
 
 //[CONSTANTS]
 #define BUTTON_PIN 4
@@ -28,7 +33,8 @@ uint8_t colorHSVVals[numColors] = {235, 83, 129, 0};
 const volatile int myColorIndex = 1;
 
 // [LED STATE VARS]
-volatile int colorIndex = 0;
+volatile int colorIndex = 0;    // The current color of the box 
+volatile int lastRecvIndex = -1; // the last received color (used to determine two-tone animations)
 uint8_t current_color_hue = 129;
 uint8_t default_saturation = 255;
 uint8_t default_brightness = MAX_BRIGHTNESS;
@@ -94,8 +100,6 @@ void setDateTime() {
   Serial.printf("%s %s", tzname[0], asctime(&timeinfo));
 }
 
-
-
 // [ANIMATION FUNCTIONS]
 
 void status(){
@@ -125,11 +129,11 @@ void resetLED(bool lightsOn){
       ledValDiffs[i][2] = -1*MAX_BRIGHTNESS;
     }
   }
-  //status();
   FastLED.show();
 }
 
 // [ANIMATE BLOCK] 
+// It's easier to leave them globals then try to keep track of passing them around.
 
 int8_t an1CtremSigns[NUM_LEDS];
 int8_t an1VtremSign = 1;
@@ -137,11 +141,11 @@ int8_t an1VtremSign = 1;
 int8_t an5LedNum = 0;
 int8_t an6LedNum = -1;
 
-int hnum;
-int snum;
-int vnum; 
-
 int animate(int selection){
+  int hnum;
+  int snum;
+  int vnum; 
+
   hnum = 0; snum = 0; vnum = 0;
   FastLED.show();
   if(selection == 0){
@@ -174,9 +178,71 @@ int animate(int selection){
       ledValDiffs[i][2]+=vnum;
       leds[i] = CHSV(current_color_hue + ledValDiffs[i][0], default_saturation, default_brightness+ledValDiffs[i][2]);   
     }
-    //status();
   }
+  else if (selection == 2){
+    // this is the "alternate between two colors" setting
+    
+    // ways to access: 
+    // - if we've sent a color, and gotten it back.
+    //   - how to tell if this happened - our animation ISN'T BLACK and we RECEIVE the same color we sent. 
+    //   - in this case, our box already knows the right color to alternate between
+    // - if we've recieved a color, and sent one out. 
+
+    uint8_t gradientLength;
+    uint8_t startpoint;
+
+    if(colorHSVVals[myColorIndex] - current_color_hue == 0){
+      Serial.print("[ERR.] Cannot form gradient: sent and recv color are the same.");
+      return 0;
+    }
+    else if(current_color_hue < colorHSVVals[myColorIndex]){
+      startpoint = current_color_hue;
+      gradientLength = colorHSVVals[myColorIndex] - current_color_hue;
+    }
+    else{
+      startpoint = colorHSVVals[myColorIndex];
+      gradientLength = current_color_hue - colorHSVVals[myColorIndex]; 
+    } 
+
+    // how much the gradient changes before reaching the next color.
+    // formula is i**2 * scalefactor
+    uint8_t scalefactor = 3;
+    
+    for(int i = 0; i < NUM_LEDS/2 + 1; i++){
+      // BTW, we use the CTREM_SIGNS array for the VALUE Tremolo here. Because I don't want more global variables.
+      // If someone comes up with a better way to do tremolo, please make a PR!
+          
+      //value tremolo (bottom)
+      if (ledValDiffs[i][2] > VTREM_VAL){
+        an1CtremSigns[i] = -1;
+      }
+      else if(ledValDiffs[i][2] < -1*VTREM_VAL){
+        an1CtremSigns[i] = 1;
+      }
+      vnum = an1CtremSigns[i]*random(3);
+      ledValDiffs[i][2]+=vnum;
+
+      //value tremolo (top)
+      if (ledValDiffs[NUM_LEDS-1-i][2] > VTREM_VAL){
+        an1CtremSigns[NUM_LEDS-1-i] = -1;
+      }
+      else if(ledValDiffs[NUM_LEDS-1-i][2] < -1*VTREM_VAL){
+        an1CtremSigns[NUM_LEDS-1-i] = 1;
+      }
+      // USES HNUM - I don't want to make a new variable. 
+      hnum = an1CtremSigns[NUM_LEDS-1-i]*random(3);
+      ledValDiffs[NUM_LEDS-1-i][2]+=hnum;
+      
+      // populate gradient here
+      // gradient moves towards i**2. 
+      leds[0+i]          = CHSV(startpoint + scalefactor * i*i, default_saturation, default_brightness + ledValDiffs[i][2]);
+      //if odd number, above overwritten by below. 
+      leds[NUM_LEDS-1-i] = CHSV(startpoint+gradientLength - scalefactor * i*i, default_saturation, default_brightness + ledValDiffs[NUM_LEDS-1-i][2]);
+    }
+  }
+  
   else if (selection == 6){
+    // currently unused.
     //fade out. random.
     //if the pin's value isn't off, fade that pin out incrementally and randomly.
     //once faded out / pin invalid, you need to pick another random.
@@ -215,11 +281,13 @@ int animate(int selection){
 volatile unsigned long lastPressTS = 0;
 volatile bool btnISRFlag = false;
 ICACHE_RAM_ATTR void pin_ISR(){
+  // interrupt that handles button presses
   // can't use millis()
 
   if (millis() - lastPressTS > 10){ 
     // 10 is debounce time in mS: if our difference is > debounce, it's legit. 
     lastPressTS = millis();
+    animNum = 1; // reset animnum, so we don't have double colors when clicking through
     btnISRFlag = true;
     
     //changing color here.
@@ -238,7 +306,6 @@ ICACHE_RAM_ATTR void pin_ISR(){
     current_color_hue = colorHSVVals[colorIndex];
     
     resetLED(true);
-    //toggle = !toggle;
   }
 }
 
@@ -300,11 +367,6 @@ void setup() {
   Serial.begin(9600);
   delay(500);
 
-  //wifi setup
-  LittleFS.begin();
-  setup_wifi();
-  setDateTime();
-
   //lighting setup
   FastLED.addLeds<NEOPIXEL, DATA_PIN>(leds, NUM_LEDS);
   for(int u = 0; u< NUM_LEDS; u++){
@@ -316,6 +378,11 @@ void setup() {
   // interrupt setup
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(BUTTON_PIN), pin_ISR, RISING);
+
+  //wifi setup
+  LittleFS.begin();
+  setup_wifi();
+  setDateTime();
 
   //MQTT certificate setup
   int numCerts = certStore.initCertStore(LittleFS, PSTR("/certs.idx"), PSTR("/certs.ar"));
@@ -336,12 +403,11 @@ void setup() {
 // [HOW TO SEND A MESSAGE] 
     //snprintf (msg, MSG_BUFFER_SIZE, "%s->%s", colors[myColorIndex], colors[colorIndex]);
     //client->publish(colors[colorIndex], msg);
-    /*
-    snprintf (msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
-    Serial.print("Publish message: ");
-    Serial.println(msg);
-    client->publish("testTopic", msg);
-    */
+    
+    //snprintf (msg, MSG_BUFFER_SIZE, "hello world #%ld", value);
+    //Serial.print("Publish message: ");
+    //Serial.println(msg);
+    //client->publish("testTopic", msg);
 
 unsigned long lastLoop = 0;             // timestamp for last time we looped
 unsigned long lastMsg = 0;              // timestamp for last message
@@ -382,9 +448,24 @@ void callback(char* topic, byte* payload, unsigned int length) {
     lastMsg = millis();
     
     colorIndex = (char)payload[4]-48;
+
+
+    // [gradient ANIMATION 2] 
+    // if we've already sent a message to the box 
+    // and we receive a message from the same one we sent to...
+
+    // note: first message if lastRecvIndex isn't the same as the current color. 
+    if((animNum == 1 || animNum ==2) && current_color_hue == colorHSVVals[colorIndex] && lastRecvIndex != colorIndex){
+      Serial.print("[RECV] box responded!!\n");
+      animNum = 2;
+    }
+    else{
+      animNum = 1;
+    }
+
+    lastRecvIndex = colorIndex;    
     current_color_hue = colorHSVVals[colorIndex];
-    
-    animNum = 1;
+
     //output message to serial...
     sprintf(msg, "[RECV] [%s] Setting Color to %d (%s) \n", colors[myColorIndex], (char)payload[4]-48, colors[colorIndex]);
     Serial.print(msg);
@@ -395,7 +476,6 @@ void callback(char* topic, byte* payload, unsigned int length) {
     sprintf(msg, "[RECV] Invalid Color Index %d \n", (char)payload[4]-48);
     Serial.print(msg); 
   }
-
 }
 
 void loop() {
@@ -426,9 +506,18 @@ void loop() {
 
       //and to MQTT
       debugPrintMQTT(msg);
+
+      if((animNum == 1 || animNum == 2) && colorIndex == lastRecvIndex){
+        // If we are sending a message, but we've received a message from that box already... 
+        Serial.print("[SEND] in response to sent message!!!\n");
+
+        animNum = 2;
+      }
+      else{
+        animNum = 1;
+      }
       
       //flash to indicate message has been sent
-      animNum = 1;
       resetLED(false);
       delay(250);
       resetLED(true);
@@ -438,11 +527,16 @@ void loop() {
       //turning off after long interval, whether we sent or received 
       sprintf (msg, "[TOFF] Turning off after %d seconds. (%d : %d) \n", (rn-lastMsg)/1000, lastMsg/1000, rn/1000);
       Serial.print(msg);
+
+      // no two-tone unless we send out again. 
+      lastRecvIndex = -1;
       
       animNum = 0;
       resetLED(false);
       msgOut = false;
     }
+
+    //status();
     animate(animNum);
   }
 }
